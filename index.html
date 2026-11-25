@@ -1,0 +1,1532 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="夜の音日記">
+  <meta name="theme-color" content="#05070f">
+  <title>夜の音日記</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <style>
+/* 同梱フォント（Noto Sans JP・可変ウェイト / SIL Open Font License） */
+@font-face {
+  font-family: "Yoru Sans";
+  src: url("fonts/NotoSansJP-300-subset.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* 色・フォント・時間は config.js から CSS 変数として流し込まれます */
+:root {
+  --font-weight: 300;
+  --bg: #05070f;
+  --bg-glow: #0e1630;
+  --text: #cfd6e6;
+  --text-dim: #6b7590;
+  --accent: #8fa3d1;
+  --line: #1e2742;
+  --input-bg: #0a0f1f;
+  --seek-track: rgba(255, 255, 255, 0.22);
+  --seek-fill: rgba(255, 255, 255, 0.65);
+  --font: "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --entry-size: 2.2rem;
+  --entry-fade: 2500ms;
+  --page-fade: 800ms;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-weight: var(--font-weight);
+  font-size: 18px;
+  line-height: 1.9;
+  letter-spacing: 0.06em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 背景のほのかな光（ごくゆっくり揺らぐ） */
+#glow {
+  position: fixed;
+  inset: -20%;
+  background: radial-gradient(ellipse at 50% 60%, var(--bg-glow) 0%, transparent 60%);
+  opacity: 0.7;
+  animation: drift 40s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes drift {
+  from { transform: translate(-3%, 2%) scale(1); opacity: 0.55; }
+  to   { transform: translate(3%, -2%) scale(1.08); opacity: 0.8; }
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  opacity: 0;
+  transition: opacity var(--page-fade) ease;
+}
+#app.visible { opacity: 1; }
+
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh 8vw;
+}
+
+/* ---------- 共通部品 ---------- */
+
+button, .btn {
+  font: inherit;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 0.7em 2.2em;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.6s, color 0.6s, background 0.6s;
+}
+button:hover, .btn:hover { border-color: var(--accent); color: var(--text); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.small { font-size: 0.8rem; padding: 0.3em 1em; letter-spacing: 0.1em; }
+button.quiet { border-color: transparent; color: var(--text-dim); }
+button.quiet:hover { color: var(--text); border-color: var(--line); }
+
+/* アイコンだけのボタン */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45em;
+  letter-spacing: 0;
+  border-color: transparent;
+  color: var(--text-dim);
+  line-height: 0;
+}
+.icon-btn:hover { border-color: transparent; color: var(--text); }
+.icon { display: inline-flex; }
+.icon-btn.play { color: var(--accent); border-color: var(--line); border-radius: 50%; padding: 0.7em; }
+.icon-btn.play:hover { border-color: var(--accent); }
+
+.back {
+  position: fixed;
+  top: 2.5vh;
+  left: 2.5vw;
+  z-index: 5;
+}
+
+.dim { color: var(--text-dim); }
+.corner {
+  position: fixed;
+  right: 2.5vw;
+  bottom: 2.5vh;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}
+
+/* ---------- ホーム ---------- */
+
+.home h1 {
+  font-weight: inherit;
+  font-size: clamp(2.8rem, 6vw, 5rem);
+  letter-spacing: 0.5em;
+  margin: 0 0 0 0.5em; /* letter-spacing分のずれを補正 */
+}
+.home .sub { color: var(--text-dim); margin: 1.5em 0 5em; letter-spacing: 0.3em; }
+.home nav { display: flex; gap: 4em; }
+.home nav .btn { font-size: 1.2rem; padding: 0.8em 2.8em; }
+
+/* ---------- 書く ---------- */
+
+.write .start-area { text-align: center; }
+.write .start-area p { color: var(--text-dim); margin-bottom: 3em; }
+.write .start-area button { font-size: 1.3rem; padding: 1em 3.5em; }
+
+.write .editor { width: min(900px, 100%); display: flex; flex-direction: column; gap: 1.5em; }
+.write textarea {
+  width: 100%;
+  min-height: 40vh;
+  resize: vertical;
+  font: inherit;
+  font-size: 1.4rem;
+  line-height: 2;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  padding: 1.2em 1.4em;
+  outline: none;
+  caret-color: var(--accent);
+}
+.write textarea:focus { border-color: #2c3a63; }
+.write .row { display: flex; justify-content: space-between; align-items: center; gap: 1em; }
+.write .status { color: var(--text-dim); font-size: 0.85rem; min-height: 1.5em; }
+.write .history { width: min(900px, 100%); margin-top: 3em; color: var(--text-dim); font-size: 0.95rem; }
+.write .history li { margin-bottom: 0.6em; white-space: pre-wrap; }
+.write .history time { margin-right: 1.2em; font-variant-numeric: tabular-nums; }
+
+/* ---------- 一覧 ---------- */
+
+.list { justify-content: flex-start; padding-top: 14vh; }
+.list h2 { font-weight: inherit; letter-spacing: 0.4em; margin: 0 0 2em; }
+.list table { border-collapse: collapse; width: min(1000px, 100%); }
+.list th, .list td { padding: 0.9em 1.2em; border-bottom: 1px solid var(--line); text-align: left; font-weight: inherit; }
+.list th { color: var(--text-dim); font-size: 0.85rem; letter-spacing: 0.2em; }
+.list tbody tr { cursor: pointer; transition: background 0.4s; }
+.list tbody tr:hover { background: rgba(143, 163, 209, 0.05); }
+.list td.num { font-variant-numeric: tabular-nums; }
+.list .empty { color: var(--text-dim); margin-top: 3em; }
+
+/* ---------- 再生 ---------- */
+
+.player { justify-content: space-between; padding-top: 10vh; padding-bottom: 6vh; }
+.player .head { text-align: center; color: var(--text-dim); letter-spacing: 0.2em; }
+
+.stage {
+  flex: 1;
+  width: min(1200px, 100%);
+  display: grid;
+  place-items: center;
+  padding: 4vh 0;
+}
+.entry {
+  grid-area: 1 / 1; /* 消えていく文章と次の文章を同じ位置に重ねる */
+  font-size: var(--entry-size);
+  line-height: 2;
+  text-align: center;
+  white-space: pre-wrap;
+  max-width: 100%;
+  opacity: 0;
+  transition: opacity var(--entry-fade) ease;
+}
+.entry.show { opacity: 1; }
+
+.controls { width: min(1000px, 100%); display: flex; flex-direction: column; gap: 0.8em; }
+.controls .row { display: flex; align-items: center; gap: 1.5em; }
+.controls .times { margin-left: auto; color: var(--text-dim); font-variant-numeric: tabular-nums; letter-spacing: 0.1em; }
+/* 再生バー：未再生部分は薄い白、再生済み部分は少し明るい白 */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+  --p: 0%;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--seek-fill) var(--p), var(--seek-track) var(--p));
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--seek-fill);
+  border: none;
+}
+input[type="range"]::-moz-range-track { height: 3px; border-radius: 2px; background: var(--seek-track); }
+input[type="range"]::-moz-range-progress { height: 3px; border-radius: 2px; background: var(--seek-fill); }
+input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--seek-fill); border: none; }
+
+.dropzone {
+  width: min(800px, 100%);
+  border: 1px dashed var(--line);
+  padding: 6vh 4vw;
+  text-align: center;
+  color: var(--text-dim);
+  transition: border-color 0.4s, background 0.4s;
+}
+.dropzone.over { border-color: var(--accent); background: rgba(143, 163, 209, 0.04); }
+.dropzone p { margin: 0 0 2em; }
+.dropzone progress { width: 100%; margin-top: 2em; accent-color: var(--accent); }
+
+.error { color: #c98a8a; }
+
+/* 再生画面は数秒操作がないとカーソルと操作部を薄くする */
+.player.idle { cursor: none; }
+.player .fadeable { transition: opacity 1.5s; }
+.player.idle .fadeable { opacity: 0; }
+
+/* ---------- 編集（作者用） ---------- */
+.admin .admin-block { width: min(1000px, 100%); margin-bottom: 4em; }
+.admin h3 { font-weight: inherit; color: var(--text-dim); letter-spacing: 0.3em; font-size: 0.95rem; border-bottom: 1px solid var(--line); padding-bottom: 0.5em; }
+.admin .dropzone { width: 100%; }
+.admin-entry { display: grid; grid-template-columns: 8em 1fr 9em; gap: 1.2em; align-items: start; padding: 1em 0; border-bottom: 1px solid var(--line); }
+.admin-entry .num { font-size: 0.85rem; font-variant-numeric: tabular-nums; line-height: 1.6; padding-top: 0.6em; }
+.admin-entry textarea { width: 100%; font: inherit; font-size: 1.1rem; color: var(--text); background: var(--input-bg); border: 1px solid var(--line); padding: 0.6em 0.9em; resize: vertical; outline: none; }
+.admin-entry textarea:focus { border-color: #2c3a63; }
+.admin-entry-actions { display: flex; flex-direction: column; gap: 0.5em; align-items: flex-start; padding-top: 0.3em; }
+.admin-entry-actions .status { font-size: 0.8rem; }
+
+/* ---------- 夜を記す：選択 ---------- */
+.choices { display: flex; gap: 10vw; }
+.choice { display: flex; flex-direction: column; align-items: center; gap: 1.6em; color: var(--text-dim); text-decoration: none; transition: color 0.6s; }
+.choice-icon { display: flex; align-items: center; justify-content: center; width: 7.5rem; height: 7.5rem; border: 1px solid var(--line); border-radius: 50%; color: var(--accent); font-size: 2.2rem; transition: border-color 0.6s, color 0.6s; }
+.choice:hover { color: var(--text); }
+.choice:hover .choice-icon { border-color: var(--accent); color: var(--text); }
+.choice-label { letter-spacing: 0.25em; }
+
+/* ---------- 一覧：文章ののぞき見 ---------- */
+.list td.peek { position: relative; }
+.peek-label { border-bottom: 1px dotted var(--text-dim); padding-bottom: 0.1em; cursor: pointer; transition: color 0.4s; }
+.peek-label:hover { color: var(--text); }
+.peek-pop {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 1.2em);
+  transform: translateY(-50%);
+  z-index: 10;
+  width: min(32em, 55vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 1.2em 1.5em;
+  background: rgba(10, 15, 31, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+  text-align: left;
+  font-variant-numeric: normal;
+  cursor: default;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.5s, visibility 0.5s;
+}
+.peek-pop.open { opacity: 1; visibility: visible; }
+.peek-entry { display: grid; grid-template-columns: 3.6em 1fr; gap: 0.8em; padding: 0.5em 0; border-bottom: 1px solid var(--line); }
+.peek-entry:last-child { border-bottom: none; }
+.peek-entry time { color: var(--text-dim); font-size: 0.85rem; font-variant-numeric: tabular-nums; padding-top: 0.15em; }
+.peek-entry p { margin: 0; white-space: pre-wrap; font-size: 0.95rem; line-height: 1.8; }
+
+/* ---------- スマホで書く（PC側の設定画面） ---------- */
+.phone h2 { font-weight: inherit; letter-spacing: 0.4em; margin: 0 0 2em; }
+.phone-body { margin-top: 3em; display: flex; flex-direction: column; align-items: center; gap: 1.2em; text-align: center; }
+.qr { width: 240px; height: 240px; background: #e8ecf5; padding: 0; border-radius: 4px; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.phone-steps { text-align: left; color: var(--text-dim); font-size: 0.95rem; margin: 0.5em 0 0; padding-left: 1.4em; }
+.phone .url { font-size: 0.75rem; word-break: break-all; max-width: 40em; margin: 0; }
+
+/* ---------- スマホで開いたとき ---------- */
+body.mobile { font-size: 16px; }
+body.mobile .screen { min-height: 100svh; padding: max(4vh, env(safe-area-inset-top)) 18px max(4vh, env(safe-area-inset-bottom)); justify-content: flex-start; }
+body.mobile .write .start-area { margin-top: 30vh; }
+body.mobile .write .editor { gap: 1em; }
+body.mobile .write textarea { min-height: 38svh; font-size: 1.1rem; padding: 0.9em 1em; }
+body.mobile .write .row { flex-wrap: wrap; }
+body.mobile .write .row > div { margin-left: auto; }
+body.mobile .hint-keys { display: none; }
+body.mobile .write .history { margin-top: 2em; font-size: 0.9rem; }
+body.mobile .corner { position: static; text-align: right; margin-top: 1.5em; }
+body.mobile button { padding: 0.8em 1.8em; }
+
+/* スマホ版（pocket）：ホーム */
+body.pocket .pocket-home { justify-content: flex-start; padding-top: max(12vh, env(safe-area-inset-top)); }
+body.pocket .pocket-home h1 { font-size: 1.6rem; margin-bottom: 2.5em; }
+body.pocket .pocket-home nav { flex-direction: column; gap: 1.4em; width: min(100%, 22rem); }
+body.pocket .pocket-home nav .btn,
+body.pocket .pocket-home nav button { font-size: 1.05rem; padding: 0.9em 1em; width: 100%; text-align: center; }
+body.pocket .pocket-msg { font-size: 0.8rem; line-height: 1.9; margin: 1.6em 0 0; max-width: 22rem; text-align: center; }
+body.pocket .pocket-list { list-style: none; padding: 0; margin: 2.5em 0 0; width: min(100%, 22rem); font-size: 0.85rem; }
+body.pocket .pocket-list li { display: flex; gap: 0.8em; padding: 0.7em 0; border-bottom: 1px solid var(--line); }
+body.pocket .pocket-list li span:last-child { margin-left: auto; }
+body.pocket .pocket-list .unsent { color: var(--accent); }
+body.mobile .write .start-area button { white-space: nowrap; padding: 0.9em 2.4em; font-size: 1.2rem; }
+body.pocket .pocket-home h1 + .pocket-msg { margin: -1em 0 2em; }
+body.pocket .screen.write { padding-top: calc(env(safe-area-inset-top) + 64px); }
+body.pocket .back { top: calc(env(safe-area-inset-top) + 12px); }
+
+</style>
+  <script>
+// 見た目・動きの設定値はここ1か所にまとめています。
+// 値を変えたらブラウザを再読み込みするだけで反映されます。
+window.CONFIG = {
+  // 文章が画面に出ている時間（ミリ秒）。現れ始めてから消え始めるまで。
+  entryDisplayMs: 10000,
+
+  // 文章のフェード（出現・消失）にかける時間（ミリ秒）
+  entryFadeMs: 2500,
+
+  // 画面遷移のフェード時間（ミリ秒）
+  pageFadeMs: 800,
+
+  // 書きかけ文章の自動保存の間隔（ミリ秒）
+  draftSaveIntervalMs: 3000,
+
+  // 色
+  colors: {
+    bg: '#05070f',        // 背景（いちばん暗い色）
+    bgGlow: '#0e1630',    // 背景のほのかな光
+    text: '#cfd6e6',      // 本文の文字
+    textDim: '#6b7590',   // 控えめな文字（経過時間など）
+    accent: '#8fa3d1',    // ボタンなどの淡い光
+    line: '#1e2742',      // 罫線・枠
+    inputBg: '#0a0f1f',   // 入力欄の背景
+    seekTrack: 'rgba(255, 255, 255, 0.22)', // 再生バー（まだ再生していない部分）
+    seekFill: 'rgba(255, 255, 255, 0.65)',  // 再生バー（再生済みの部分とつまみ）
+  },
+
+  // フォント。"Yoru Sans" は同梱の Noto Sans JP（public/fonts）。
+  // 明朝に戻すなら '"Hiragino Mincho ProN", "Yu Mincho", serif' など。
+  fontFamily: '"Yoru Sans", "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif',
+
+  // 文字の太さ（100〜900。300 = 細め、400 = 標準）
+  fontWeight: 300,
+
+  // 再生画面で現れる文章の文字サイズ
+  entryFontSize: '3.3rem',
+};
+
+window.YORU_POCKET = true;
+</script>
+</head>
+<body>
+  <div id="glow" aria-hidden="true"></div>
+  <main id="app"></main>
+  <script>
+// 夜の音日記 — 単体HTML版の「サーバーの代わり」
+// サーバー（server.js）のAPIと同じ形で、ブラウザの中に保存する。
+//   夜と文章 … localStorage（使えないときはこのタブを閉じるまでの一時保存）
+//   録音(wav) … IndexedDB（使えないときはこのタブを閉じるまでの一時保存）
+// 初めて開いたときは、試せるようにサンプルの夜（合成した環境音つき）を1つ入れる。
+(() => {
+  'use strict';
+
+  const NIGHTS_KEY = 'yoru.local.nights';
+  const SEEDED_KEY = 'yoru.local.seeded';
+  const SAMPLE_ID = 'sample-night-0001';
+
+  // ---------- 夜と文章 ----------
+  let memoryNights = null; // localStorage が使えないとき
+  function loadAll() {
+    if (memoryNights) return memoryNights;
+    try {
+      return JSON.parse(localStorage.getItem(NIGHTS_KEY)) || {};
+    } catch {
+      memoryNights = {};
+      return memoryNights;
+    }
+  }
+  function saveAll(all) {
+    try {
+      localStorage.setItem(NIGHTS_KEY, JSON.stringify(all));
+    } catch {
+      memoryNights = all;
+    }
+  }
+  const newId = () => Date.now().toString(36) + '-' + Math.random().toString(16).slice(2, 10);
+  const isTime = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const summary = (n) => ({ id: n.id, startedAt: n.startedAt, endedAt: n.endedAt, wavFileName: n.wavFileName, entryCount: n.entries.length });
+  const notFound = () => new Error('not found');
+
+  // ---------- 録音（IndexedDB） ----------
+  const memoryAudio = new Map(); // id -> Blob（保存できなかったときの一時置き場）
+  const urlCache = new Map();    // id -> objectURL
+  let dbPromise = null;
+  function db() {
+    if (!dbPromise) {
+      dbPromise = new Promise((resolve) => {
+        try {
+          const req = indexedDB.open('yoru-local', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore('audio');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+    }
+    return dbPromise;
+  }
+  async function idb(mode, fn) {
+    const d = await db();
+    if (!d) throw new Error('no indexeddb');
+    return new Promise((resolve, reject) => {
+      const tx = d.transaction('audio', mode);
+      const req = fn(tx.objectStore('audio'));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error || new Error('indexeddb error'));
+      tx.onabort = () => reject(tx.error || new Error('indexeddb aborted'));
+    });
+  }
+  function forgetUrl(id) {
+    const u = urlCache.get(id);
+    if (u) URL.revokeObjectURL(u);
+    urlCache.delete(id);
+  }
+
+  // ---------- サンプルの夜 ----------
+  // 合成した「夜の環境音」：ゆっくり揺れる低いざわめき（ブラウンノイズ）に、ときどき遠い音
+  function makeSampleWav(seconds = 75, rate = 22050) {
+    const n = seconds * rate;
+    const buf = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    w(36, 'data'); v.setUint32(40, n * 2, true);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+    let brown = 0;
+    const chimes = [4.2, 12.5, 31.8, 52.3]; // 文章の出るあたりで、遠くの小さな音
+    for (let i = 0; i < n; i++) {
+      const t = i / rate;
+      brown = (brown + 0.02 * rnd()) / 1.02;
+      const swell = 0.55 + 0.45 * Math.sin(2 * Math.PI * t / 23) * Math.sin(2 * Math.PI * t / 9.7);
+      let s = brown * 3.2 * swell;
+      for (const c of chimes) {
+        const d = t - c;
+        if (d >= 0 && d < 4) s += 0.06 * Math.exp(-d * 1.4) * Math.sin(2 * Math.PI * 660 * d) * Math.sin(Math.PI * Math.min(1, d * 40) / 2);
+      }
+      const fade = Math.min(1, t / 3, (seconds - t) / 3);
+      v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s * fade)) * 0x5fff, true);
+    }
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  function seedIfFirstTime() {
+    try { if (localStorage.getItem(SEEDED_KEY)) return; } catch {}
+    const all = loadAll();
+    if (Object.keys(all).length === 0) {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      d.setHours(23, 12, 0, 0);
+      const startedAt = d.getTime();
+      const texts = [
+        [4, '窓の外で、遠くの車の音がしている。'],
+        [12, '冷蔵庫が小さく鳴った。\n部屋がひとつ、呼吸したみたいだった。'],
+        [32, '風が強くなってきた。カーテンの裾がすこし揺れている。'],
+        [52, 'もう眠れそうな気がする。'],
+      ];
+      all[SAMPLE_ID] = {
+        id: SAMPLE_ID,
+        startedAt,
+        endedAt: startedAt + 75000,
+        wavFileName: 'サンプル（合成した夜の音）.wav',
+        sample: true,
+        entries: texts.map(([sec, text], i) => ({
+          id: 'sample-entry-' + i, nightId: SAMPLE_ID, typedAt: startedAt + sec * 1000, savedAt: startedAt + sec * 1000 + 20000, text,
+        })),
+        draft: null,
+      };
+      saveAll(all);
+    }
+    try { localStorage.setItem(SEEDED_KEY, '1'); } catch {}
+  }
+  // スマホ版（window.YORU_POCKET）ではサンプルを入れず、消えにくい保存をお願いする
+  if (window.YORU_POCKET) {
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
+  } else {
+    seedIfFirstTime();
+  }
+
+  // スマホ版の「Macへ送る」用：書きかけを除いたすべての夜
+  function exportAll() {
+    return Object.values(loadAll())
+      .filter((n) => !n.sample)
+      .map((n) => ({ id: n.id, startedAt: n.startedAt, endedAt: n.endedAt, entries: clone(n.entries) }))
+      .sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  // ---------- API（server.js と同じ形） ----------
+  async function api(method, url, body = {}) {
+    const parts = url.split('?')[0].split('/').filter(Boolean); // ['api','nights',id,sub,extra]
+    const [, resource, id, sub, extra] = parts;
+    if (resource === 'mode') return { mobile: false, authorized: true };
+    if (resource !== 'nights') throw new Error('この機能は単体HTML版では使えません');
+
+    const all = loadAll();
+    if (!id && method === 'GET') return Object.values(all).map(summary).sort((a, b) => b.startedAt - a.startedAt);
+    if (!id && method === 'POST') {
+      const night = { id: newId(), startedAt: isTime(body.startedAt) ? body.startedAt : Date.now(), endedAt: null, wavFileName: null, entries: [], draft: null };
+      all[night.id] = night;
+      saveAll(all);
+      return clone(night);
+    }
+
+    const n = all[id];
+    if (!n) throw notFound();
+
+    if (!sub && method === 'GET') return clone(n);
+    if (!sub && method === 'DELETE') {
+      delete all[id];
+      saveAll(all);
+      memoryAudio.delete(id);
+      forgetUrl(id);
+      await idb('readwrite', (s) => s.delete(id)).catch(() => {});
+      return { ok: true };
+    }
+    if (sub === 'entries' && !extra && method === 'POST') {
+      const text = typeof body.text === 'string' ? body.text : '';
+      if (!text.trim()) throw new Error('empty');
+      const now = Date.now();
+      const entry = { id: newId(), nightId: id, typedAt: isTime(body.typedAt) ? body.typedAt : now, savedAt: now, text };
+      n.entries.push(entry);
+      n.entries.sort((a, b) => a.typedAt - b.typedAt);
+      n.draft = null;
+      saveAll(all);
+      return clone(entry);
+    }
+    if (sub === 'entries' && extra && method === 'PATCH') {
+      const text = typeof body.text === 'string' ? body.text : '';
+      if (!text.trim()) throw new Error('empty');
+      const en = n.entries.find((e) => e.id === extra);
+      if (!en) throw notFound();
+      if (en.originalText == null && en.text !== text) en.originalText = en.text;
+      en.text = text;
+      en.editedAt = Date.now();
+      saveAll(all);
+      return clone(en);
+    }
+    if (sub === 'draft' && method === 'PUT') {
+      const text = typeof body.text === 'string' ? body.text : '';
+      n.draft = text ? { text, typedAt: isTime(body.typedAt) ? body.typedAt : null, updatedAt: Date.now() } : null;
+      saveAll(all);
+      return { ok: true };
+    }
+    if (sub === 'end' && method === 'POST') {
+      n.endedAt = isTime(body.endedAt) ? body.endedAt : Date.now();
+      saveAll(all);
+      return clone(n);
+    }
+    throw new Error('method not allowed');
+  }
+
+  // 録音の取り込み：WAVかを確かめ、ブラウザ内（IndexedDB）に保存する
+  async function importAudio(id, file, onProgress = () => {}) {
+    const all = loadAll();
+    const n = all[id];
+    if (!n) throw notFound();
+    const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const tag = (a, b) => String.fromCharCode(...head.slice(a, b));
+    if (head.length < 12 || tag(0, 4) !== 'RIFF' || tag(8, 12) !== 'WAVE') throw new Error('WAVファイルではないようです');
+    onProgress(0.3);
+    forgetUrl(id);
+    memoryAudio.set(id, file);
+    try {
+      await idb('readwrite', (s) => s.put(file, id));
+      memoryAudio.delete(id);
+    } catch {
+      // 保存できなかった（容量・ブラウザの制限）：このタブを閉じるまでは聴ける
+    }
+    onProgress(1);
+    n.wavFileName = file.name;
+    n.wavImportedAt = Date.now();
+    delete n.sample;
+    saveAll(all);
+  }
+
+  // 再生用のURL（ファイルはディスクから少しずつ読まれ、全部をメモリに載せない）
+  async function audioUrl(id) {
+    if (urlCache.has(id)) return urlCache.get(id);
+    const n = loadAll()[id];
+    if (!n || !n.wavFileName) return null;
+    let blob = memoryAudio.get(id) || null;
+    if (!blob) blob = await idb('readonly', (s) => s.get(id)).catch(() => null);
+    if (!blob && n.sample) blob = makeSampleWav();
+    if (!blob) return null;
+    const u = URL.createObjectURL(blob);
+    urlCache.set(id, u);
+    return u;
+  }
+
+  window.YORU_LOCAL = { api, importAudio, audioUrl, exportAll };
+})();
+
+</script>
+  <script>
+// 夜の音日記 — 画面（ホーム／書く／聴く）
+(() => {
+  'use strict';
+  const C = window.CONFIG;
+  const app = document.getElementById('app');
+  let MOBILE = false; // スマホ用の入口から開かれているとき true
+
+  // ---------- 設定値を CSS 変数へ ----------
+  const rootStyle = document.documentElement.style;
+  const colorVars = { bg: '--bg', bgGlow: '--bg-glow', text: '--text', textDim: '--text-dim', accent: '--accent', line: '--line', inputBg: '--input-bg', seekTrack: '--seek-track', seekFill: '--seek-fill' };
+  for (const [k, v] of Object.entries(colorVars)) if (C.colors[k]) rootStyle.setProperty(v, C.colors[k]);
+  rootStyle.setProperty('--font', C.fontFamily);
+  if (C.fontWeight) rootStyle.setProperty('--font-weight', C.fontWeight);
+  rootStyle.setProperty('--entry-size', C.entryFontSize);
+  rootStyle.setProperty('--entry-fade', C.entryFadeMs + 'ms');
+  rootStyle.setProperty('--page-fade', C.pageFadeMs + 'ms');
+
+  // ---------- 小道具 ----------
+  const TZ = 'Asia/Tokyo';
+  const fmtDate = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const fmtTime = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+  const fmtTimeSec = new Intl.DateTimeFormat('ja-JP', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+  function fmtDuration(ms) {
+    if (!Number.isFinite(ms) || ms < 0) ms = 0;
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const p = (n) => String(n).padStart(2, '0');
+    return `${h}:${p(m)}:${p(sec)}`;
+  }
+
+  function h(tag, attrs = {}, ...children) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else if (k === 'class') el.className = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of children.flat()) if (c != null) el.append(c);
+    return el;
+  }
+
+  // スマホ連携の合言葉：QRコードのURL（?k=）から受け取り、スマホに保存して毎回送る
+  const MOBILE_KEY = (() => {
+    const k = new URLSearchParams(location.search).get('k');
+    try {
+      if (k) localStorage.setItem('yoru.mobileKey', k);
+      return k || localStorage.getItem('yoru.mobileKey');
+    } catch { return k; }
+  })();
+  const authHeaders = (extra = {}) => (MOBILE_KEY ? { ...extra, 'X-Yoru-Key': MOBILE_KEY } : extra);
+
+  // 単体HTML版（standalone/）では、サーバーの代わりにブラウザ内へ保存する仕組みが入る
+  const LOCAL = window.YORU_LOCAL || null;
+  // スマホ版（pocket/：スマホだけで書き、AirDropでMacへ送る）
+  const POCKET = !!(LOCAL && window.YORU_POCKET);
+  if (POCKET) document.body.classList.add('mobile', 'pocket');
+
+  async function api(method, url, body) {
+    if (LOCAL) return LOCAL.api(method, url, body);
+    const res = await fetch(url, {
+      method,
+      headers: authHeaders(body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+  const ACTIVE_KEY = 'yoru.activeNightId';
+  const draftKey = (id) => 'yoru.draft.' + id;
+
+  // 取り込み欄の外にファイルを落としても、画面がそのファイルに切り替わらないように
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => e.preventDefault());
+
+  // F キーでフルスクリーン切り替え（入力中は除く）
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'f' && e.key !== 'F') return;
+    if (e.target.closest('textarea, input')) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  });
+
+  // ---------- 画面遷移（フェード） ----------
+  let cleanup = null;
+  let routing = Promise.resolve();
+
+  function route() {
+    routing = routing.then(async () => {
+      app.classList.remove('visible');
+      await new Promise((r) => setTimeout(r, app.innerHTML ? C.pageFadeMs : 0));
+      if (cleanup) { try { cleanup(); } catch {} cleanup = null; }
+      app.innerHTML = '';
+      const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+      try {
+        if (MOBILE) cleanup = await viewWrite(); // スマホは書く画面だけ
+        else if (POCKET) cleanup = parts[0] === 'write' && parts[1] === 'new' ? await viewWrite() : await viewPocketHome();
+        else if (parts[0] === 'write' && parts[1] === 'new') cleanup = await viewWrite();
+        else if (parts[0] === 'phone') cleanup = await viewPhone();
+        else if (parts[0] === 'write') cleanup = viewWriteChoice();
+        else if (parts[0] === 'listen' && parts[1]) cleanup = await viewPlayer(parts[1]);
+        else if (parts[0] === 'listen') cleanup = await viewList();
+        else if (parts[0] === 'admin' && parts[1]) cleanup = await viewAdminNight(parts[1]);
+        else if (parts[0] === 'admin') cleanup = await viewAdmin();
+        else cleanup = viewHome();
+      } catch (e) {
+        console.error(e);
+        app.append(h('section', { class: 'screen' }, h('p', { class: 'error' }, '読み込めませんでした：' + e.message), h('a', { class: 'btn', href: '#/' }, 'ホームへ')));
+      }
+      requestAnimationFrame(() => app.classList.add('visible'));
+    });
+  }
+  window.addEventListener('hashchange', route);
+
+  // アイコン（SVGを同梱。線の色は文字色に従う）
+  const ICONS = {
+    home: '<path d="M3 11 L12 3.5 L21 11"/><path d="M5.5 9 V20.5 H18.5 V9"/><path d="M10 20.5 V14.5 H14 V20.5"/>',
+    menu: '<path d="M4 6.5 H20"/><path d="M4 12 H20"/><path d="M4 17.5 H20"/>',
+    trash: '<path d="M4 6.5 H20"/><path d="M9.5 6.5 V4 H14.5 V6.5"/><path d="M6.5 6.5 L7.5 20.5 H16.5 L17.5 6.5"/><path d="M10.2 10 V17"/><path d="M13.8 10 V17"/>',
+    play: '<path d="M8 5 L19 12 L8 19 Z" fill="currentColor" stroke="none"/>',
+    stop: '<rect x="6.5" y="6.5" width="11" height="11" fill="currentColor" stroke="none"/>',
+    plus: '<path d="M12 4.5 V19.5"/><path d="M4.5 12 H19.5"/>',
+    pencil: '<path d="M15.5 4.5 L19.5 8.5 L8.5 19.5 L4 20 L4.5 15.5 Z"/><path d="M13 7 L17 11"/>',
+    back: '<path d="M14.5 5 L7.5 12 L14.5 19"/>',
+    phone: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 17.5 H13"/>',
+  };
+  function icon(name) {
+    const span = document.createElement('span');
+    span.className = 'icon';
+    span.innerHTML = `<svg viewBox="0 0 24 24" width="1.4em" height="1.4em" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+    return span;
+  }
+
+  const backButton = (href, iconName, label) => MOBILE
+    ? document.createTextNode('') // スマホでは書く画面から出ない
+    : h('a', { class: 'btn icon-btn back', href, title: label, 'aria-label': label }, icon(iconName));
+
+  // ---------- ホーム ----------
+  function viewHome() {
+    app.append(
+      h('section', { class: 'screen home' },
+        h('h1', {}, '夜の音日記'),
+        h('p', { class: 'sub' }, '夜の音と、そのとき書いたことば'),
+        h('nav', {},
+          h('a', { class: 'btn', href: '#/write' }, '夜を記す'),
+          h('a', { class: 'btn', href: '#/listen' }, '夜を聴く'),
+        ),
+      ),
+    );
+    return null;
+  }
+
+  // ---------- スマホ版：ホーム（書く／Macへ送る） ----------
+  // 送ったかどうかは「文章の数と終えた時刻」で覚える。続きを書いたら、また「まだ送っていない」になる。
+  const SENT_KEY = 'yoru.pocket.sent';
+  const sentSig = (n) => n.entries.length + ':' + (n.endedAt || '');
+
+  async function viewPocketHome() {
+    const resuming = !!store.get(ACTIVE_KEY);
+    const nights = LOCAL.exportAll().filter((n) => n.entries.length || n.endedAt);
+    const sent = store.get(SENT_KEY) || {};
+    const unsent = nights.filter((n) => sent[n.id] !== sentSig(n));
+    const msg = h('p', { class: 'dim pocket-msg' });
+
+    const sendBtn = h('button', {}, unsent.length ? `Macへ送る（${unsent.length}夜）` : 'Macへ送る');
+    sendBtn.disabled = !nights.length;
+    sendBtn.addEventListener('click', async () => {
+      const d = new Date();
+      const p2 = (x) => String(x).padStart(2, '0');
+      const name = `yoru-phone-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.json`;
+      const data = { format: 'yoru-no-oto-nikki/phone-export', version: 1, exportedAt: Date.now(), nights };
+      const file = new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] }); // 共有シートから AirDrop でMacへ
+        } else {
+          const a = h('a', { href: URL.createObjectURL(file), download: name });
+          document.body.append(a); a.click(); a.remove();
+        }
+      } catch (e) {
+        if (e.name !== 'AbortError') msg.textContent = '送れませんでした：' + e.message;
+        return;
+      }
+      const next = { ...sent };
+      for (const n of nights) next[n.id] = sentSig(n);
+      store.set(SENT_KEY, next);
+      route();
+    });
+
+    const list = h('ul', { class: 'pocket-list' },
+      nights.map((n) => h('li', {},
+        h('span', {}, fmtDate.format(n.startedAt)),
+        h('span', { class: 'dim' }, `${n.entries.length}件${n.endedAt ? '' : '・書き途中'}`),
+        h('span', { class: sent[n.id] === sentSig(n) ? 'dim' : 'unsent' }, sent[n.id] === sentSig(n) ? '送信済み' : 'まだ送っていない'),
+      )));
+
+    const installed = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    app.append(
+      h('section', { class: 'screen home pocket-home' },
+        h('h1', {}, '夜の音日記'),
+        installed ? null : h('p', { class: 'dim pocket-msg' }, '共有ボタン →「ホーム画面に追加」してから、ホーム画面のアイコンで使ってください（Safariとホーム画面では記録が別々になります）'),
+        h('nav', {},
+          h('a', { class: 'btn', href: '#/write/new' }, resuming ? '書き途中の夜を続ける' : '夜を記す'),
+          sendBtn,
+        ),
+        msg,
+        nights.length ? list : null,
+        h('p', { class: 'dim pocket-msg' }, '「Macへ送る」→ AirDrop でMacを選ぶと、Macのアプリが自動で取り込みます。何度送っても重なりません。'),
+      ),
+    );
+    return null;
+  }
+
+  // ---------- 夜を記す：新しい夜（＋）か、今までの夜の編集（鉛筆）か ----------
+  function viewWriteChoice() {
+    const resuming = !!store.get(ACTIVE_KEY);
+    const choice = (href, iconName, label) =>
+      h('a', { class: 'choice', href, 'aria-label': label }, h('span', { class: 'choice-icon' }, icon(iconName)), h('span', { class: 'choice-label' }, label));
+    app.append(
+      backButton('#/', 'home', 'ホーム'),
+      h('section', { class: 'screen' },
+        h('nav', { class: 'choices' },
+          choice('#/write/new', 'plus', resuming ? '書き途中の夜を続ける' : '新しい夜'),
+          choice('#/admin', 'pencil', '今までの夜を編集'),
+          LOCAL ? null : choice('#/phone', 'phone', 'スマホで書く'),
+        ),
+      ),
+    );
+    return null;
+  }
+
+  // ---------- スマホで書く（PC側：連携のオン／オフとQRコード） ----------
+  async function viewPhone() {
+    const screen = h('section', { class: 'screen phone' });
+    app.append(backButton('#/write', 'back', '戻る'), screen);
+
+    function qrSvg(text) {
+      const qr = window.qrcode(0, 'M');
+      qr.addData(text);
+      qr.make();
+      const wrap = h('div', { class: 'qr' });
+      wrap.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 4, scalable: true });
+      return wrap;
+    }
+
+    async function render(status) {
+      screen.innerHTML = '';
+      const toggle = h('button', {}, status.enabled ? 'スマホ連携をオフにする' : 'スマホ連携をオンにする');
+      toggle.addEventListener('click', async () => {
+        toggle.disabled = true;
+        try { render(await api('POST', '/api/mobile', { enabled: !status.enabled })); }
+        catch (e) { alert('切り替えられませんでした：' + e.message); toggle.disabled = false; }
+      });
+
+      const body = h('div', { class: 'phone-body' });
+      if (!status.enabled) {
+        body.append(h('p', { class: 'dim' }, 'オンにすると、同じWi-Fiにつないだスマホから日記を書けます。', h('br'), 'アプリを終了すると、自動でオフに戻ります。'));
+      } else if (!status.urls.length) {
+        body.append(h('p', { class: 'error' }, 'このPCがWi-Fiにつながっていないようです。'));
+      } else {
+        const url = status.urls[0];
+        const renew = h('button', { class: 'small quiet' }, '合言葉を作り直す');
+        renew.addEventListener('click', async () => {
+          if (!confirm('合言葉を作り直しますか？\nこれまでQRコードを読み取ったスマホは、もう一度読み取るまで書けなくなります。')) return;
+          render(await api('POST', '/api/mobile/renew'));
+        });
+        body.append(
+          qrSvg(url),
+          h('ol', { class: 'phone-steps' },
+            h('li', {}, 'スマホをこのPCと同じWi-Fiにつなぐ'),
+            h('li', {}, 'スマホのカメラでQRコードを読み取り、Safariで開く'),
+            h('li', {}, '共有ボタン →「ホーム画面に追加」で、次からはアイコンで開けます'),
+          ),
+          h('p', { class: 'dim url' }, url),
+          h('p', { class: 'dim', style: 'font-size:0.8rem' }, 'このQRコードは合言葉を含んでいます。人に見せないでください。'),
+          renew,
+        );
+      }
+      screen.append(h('h2', {}, 'スマホで書く'), toggle, body);
+    }
+    render(await api('GET', '/api/mobile'));
+    return null;
+  }
+
+  // ---------- 書く ----------
+  async function viewWrite() {
+    const screen = h('section', { class: 'screen write' });
+    app.append(backButton('#/write', 'back', '戻る'), screen);
+
+    // 終わっていない夜があれば再開する
+    let night = null;
+    const activeId = store.get(ACTIVE_KEY);
+    if (activeId) {
+      try {
+        night = await api('GET', '/api/nights/' + activeId);
+        if (night.endedAt) night = null;
+      } catch { night = null; }
+      if (!night) store.del(ACTIVE_KEY);
+    }
+
+    let timers = [];
+    const clearTimers = () => { timers.forEach(clearInterval); timers = []; };
+
+    function showStart() {
+      screen.innerHTML = '';
+      const btn = h('button', {}, '日記のスタート');
+      btn.addEventListener('click', async () => {
+        const startedAt = Date.now(); // 押した瞬間
+        btn.disabled = true;
+        try {
+          night = await api('POST', '/api/nights', { startedAt });
+          store.set(ACTIVE_KEY, night.id);
+          showEditor();
+        } catch (e) {
+          btn.disabled = false;
+          alert('スタートできませんでした：' + e.message);
+        }
+      });
+      screen.append(h('div', { class: 'start-area' }, h('p', {}, 'レコーダーの録音と同時に押してください'), btn));
+    }
+
+    function showEditor() {
+      screen.innerHTML = '';
+      const textarea = h('textarea', { placeholder: 'ここに書く', spellcheck: 'false' });
+      const status = h('span', { class: 'status' });
+      const submitBtn = h('button', {}, '記す');
+      const endBtn = h('button', { class: 'small quiet' }, '夜を終える');
+      const historyList = h('ul', {});
+      const elapsed = h('div', { class: 'corner' });
+
+      let typedAt = null;
+      let dirty = false;
+
+      // 書きかけの復元（ブラウザ保存とサーバー保存の新しい方）
+      const local = store.get(draftKey(night.id));
+      const remote = night.draft;
+      const draft = [local, remote].filter((d) => d && d.text).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+      if (draft) {
+        textarea.value = draft.text;
+        typedAt = draft.typedAt || null;
+      }
+
+      textarea.addEventListener('input', () => {
+        if (textarea.value.length === 0) typedAt = null;
+        else if (typedAt == null) typedAt = Date.now(); // 最初の1文字を打った瞬間
+        dirty = true;
+        store.set(draftKey(night.id), { text: textarea.value, typedAt, updatedAt: Date.now() });
+      });
+
+      async function saveDraft() {
+        if (!dirty) return;
+        dirty = false;
+        try {
+          await api('PUT', `/api/nights/${night.id}/draft`, { text: textarea.value, typedAt });
+        } catch { dirty = true; }
+      }
+
+      function renderHistory() {
+        historyList.innerHTML = '';
+        for (const en of night.entries.slice().reverse()) {
+          historyList.append(h('li', {}, h('time', {}, fmtTime.format(en.typedAt)), en.text));
+        }
+      }
+
+      async function submit() {
+        const text = textarea.value;
+        if (!text.trim()) return;
+        submitBtn.disabled = true;
+        try {
+          const entry = await api('POST', `/api/nights/${night.id}/entries`, { text, typedAt: typedAt || Date.now() });
+          night.entries.push(entry);
+          textarea.value = '';
+          typedAt = null;
+          dirty = false;
+          store.del(draftKey(night.id));
+          status.textContent = fmtTime.format(entry.typedAt) + ' の文章を記しました';
+          renderHistory();
+        } catch (e) {
+          status.textContent = '保存できませんでした：' + e.message;
+        } finally {
+          submitBtn.disabled = false;
+          textarea.focus();
+        }
+      }
+
+      submitBtn.addEventListener('click', submit);
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+          e.preventDefault();
+          submit();
+        }
+      });
+
+      endBtn.addEventListener('click', async () => {
+        const hasDraft = textarea.value.trim().length > 0;
+        const msg = hasDraft ? '書きかけの文章を記してから、夜を終えますか？' : '夜を終えますか？';
+        if (!confirm(msg)) return;
+        const endedAt = Date.now();
+        try {
+          if (hasDraft) await submit();
+          await api('POST', `/api/nights/${night.id}/end`, { endedAt });
+          store.del(ACTIVE_KEY);
+          store.del(draftKey(night.id));
+          clearTimers();
+          showEnded(endedAt);
+        } catch (e) {
+          alert('終えられませんでした：' + e.message);
+        }
+      });
+
+      const tick = () => { elapsed.textContent = fmtDuration(Date.now() - night.startedAt); };
+      tick();
+      timers.push(setInterval(tick, 1000));
+      timers.push(setInterval(saveDraft, C.draftSaveIntervalMs));
+
+      screen.append(
+        h('div', { class: 'editor' },
+          textarea,
+          h('div', { class: 'row' }, status, h('div', {}, endBtn, ' ', submitBtn)),
+          h('div', { class: 'dim hint-keys', style: 'font-size:0.8rem' }, 'Ctrl + Enter でも記せます'),
+        ),
+        h('div', { class: 'history' }, historyList),
+        elapsed,
+      );
+      renderHistory();
+      textarea.focus();
+
+      // 画面を離れるときは書きかけを送っておく
+      const onHide = () => { if (dirty) saveDraftBeacon(); };
+      function saveDraftBeacon() {
+        if (LOCAL) return api("PUT", `/api/nights/${night.id}/draft`, { text: textarea.value, typedAt }).catch(() => {});
+        fetch(`/api/nights/${night.id}/draft`, {
+          method: 'PUT', keepalive: true,
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ text: textarea.value, typedAt }),
+        }).catch(() => {});
+      }
+      window.addEventListener('pagehide', onHide);
+      timers.cleanupHide = () => { window.removeEventListener('pagehide', onHide); saveDraft(); };
+    }
+
+    function showEnded(endedAt) {
+      screen.innerHTML = '';
+      screen.append(
+        h('div', { class: 'start-area' },
+          h('p', {}, fmtTime.format(endedAt) + '　夜を終えました'),
+          MOBILE
+            ? h('button', { onclick: () => route() }, '新しい夜をはじめる')
+            : POCKET ? h('a', { class: 'btn', href: '#/' }, 'Macへ送る画面へ')
+            : h('a', { class: 'btn', href: '#/' }, 'ホームへ'),
+        ),
+      );
+    }
+
+    if (night) showEditor(); else showStart();
+
+    return () => {
+      if (timers.cleanupHide) timers.cleanupHide();
+      clearTimers();
+    };
+  }
+
+  // 文章の件数：クリックすると、その夜の文章をのぞける。ほかの場所をクリック（または Esc）で閉じる
+  let openPeek = null; // いま開いているのぞき窓 { pop, close }
+
+  // 窓が開いているときのクリックは「閉じる」だけにする（下の行の夜を開いてしまわないように）
+  document.addEventListener('click', (e) => {
+    if (!openPeek) return;
+    if (!document.contains(openPeek.pop)) { openPeek = null; return; }
+    if (openPeek.pop.contains(e.target)) return;     // 窓の中のクリックはそのまま
+    if (e.target.closest('.peek-label')) return;     // 件数のクリックは件数側で扱う
+    openPeek.close();
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && openPeek) openPeek.close(); });
+
+  function entryPeek(n) {
+    const label = h('span', { class: 'peek-label' }, n.entryCount + ' 件');
+    const td = h('td', { class: 'num peek' }, label);
+    if (!n.entryCount) return td;
+    let pop = null;
+    let loading = null;
+
+    const close = () => {
+      if (pop) pop.classList.remove('open');
+      if (openPeek && openPeek.pop === pop) openPeek = null;
+    };
+    const open = () => {
+      if (openPeek) openPeek.close();
+      void pop.offsetWidth;
+      pop.classList.add('open');
+      openPeek = { pop, close };
+    };
+
+    label.addEventListener('click', (e) => {
+      e.stopPropagation(); // 件数のクリックでは夜を開かない
+      if (pop && pop.classList.contains('open')) return close();
+      if (pop) return open();
+      if (loading) return;
+      loading = api('GET', '/api/nights/' + n.id).then((night) => {
+        pop = h('div', { class: 'peek-pop' },
+          night.entries.map((en) => h('div', { class: 'peek-entry' },
+            h('time', {}, fmtTime.format(en.typedAt)),
+            h('p', {}, en.text))));
+        pop.addEventListener('click', (ev) => ev.stopPropagation()); // 窓の中のクリックで夜を開かない
+        td.append(pop);
+        open();
+      }).catch(() => {}).finally(() => { loading = null; });
+    });
+    return td;
+  }
+
+  // ---------- 一覧（来場者向け：見るだけ。録音のある夜だけ出す） ----------
+  async function viewList() {
+    const nights = (await api('GET', '/api/nights')).filter((n) => n.wavFileName);
+    const screen = h('section', { class: 'screen list' }, h('h2', {}, '夜の記録'));
+    app.append(backButton('#/', 'home', 'ホーム'), screen);
+
+    if (!nights.length) {
+      screen.append(h('p', { class: 'empty' }, 'まだ聴ける夜がありません'));
+      return null;
+    }
+
+    const tbody = h('tbody');
+    for (const n of nights) {
+      tbody.append(h('tr', { onclick: () => { location.hash = '#/listen/' + n.id; } },
+        h('td', {}, fmtDate.format(n.startedAt)),
+        h('td', { class: 'num' }, fmtTime.format(n.startedAt) + (n.endedAt ? ' – ' + fmtTime.format(n.endedAt) : ' –')),
+        entryPeek(n),
+      ));
+    }
+    screen.append(
+      h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, '日付'), h('th', {}, '時刻'), h('th', {}, '文章'))),
+        tbody,
+      ),
+    );
+    return null;
+  }
+
+  // ---------- 編集（作者用：#/admin。来場者の画面からはリンクしない） ----------
+  async function viewAdmin() {
+    const nights = await api('GET', '/api/nights');
+    const screen = h('section', { class: 'screen list' }, h('h2', {}, '記録の編集'));
+    app.append(backButton('#/write', 'back', '戻る'), screen);
+
+    if (!nights.length) {
+      screen.append(h('p', { class: 'empty' }, 'まだ夜の記録がありません'));
+      return null;
+    }
+
+    const tbody = h('tbody');
+    for (const n of nights) {
+      const del = h('button', { class: 'icon-btn', title: 'この夜を削除', 'aria-label': '削除' }, icon('trash'));
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const label = fmtDate.format(n.startedAt) + ' ' + fmtTime.format(n.startedAt);
+        if (!confirm(`${label} の夜を削除しますか？\n文章${n.entryCount}件${n.wavFileName ? 'と録音ファイル' : ''}が完全に消えます。`)) return;
+        try {
+          await api('DELETE', '/api/nights/' + n.id);
+          if (store.get(ACTIVE_KEY) === n.id) store.del(ACTIVE_KEY);
+          tr.remove();
+        } catch (err) {
+          alert('削除できませんでした：' + err.message);
+        }
+      });
+      const tr = h('tr', { onclick: () => { location.hash = '#/admin/' + n.id; } },
+        h('td', {}, fmtDate.format(n.startedAt)),
+        h('td', { class: 'num' }, fmtTime.format(n.startedAt) + (n.endedAt ? ' – ' + fmtTime.format(n.endedAt) : ' –（書き途中）')),
+        h('td', { class: 'num' }, n.entryCount + ' 件'),
+        h('td', {}, n.wavFileName ? '録音あり' : h('span', { class: 'dim' }, '未取り込み')),
+        h('td', { style: 'text-align:right' }, del),
+      );
+      tbody.append(tr);
+    }
+    screen.append(
+      h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, '日付'), h('th', {}, '時刻'), h('th', {}, '文章'), h('th', {}, '録音'), h('th', {}))),
+        tbody,
+      ),
+    );
+    return null;
+  }
+
+  // 1つの夜の編集：録音の取り込み・差し替え、文章の書き直し
+  async function viewAdminNight(id) {
+    const night = await api('GET', '/api/nights/' + id);
+    const screen = h('section', { class: 'screen list admin' });
+    app.append(backButton('#/admin', 'menu', '編集一覧へ'), screen);
+    screen.append(h('h2', {}, fmtDate.format(night.startedAt) + '　' + fmtTime.format(night.startedAt)));
+
+    // 録音
+    const audioBox = h('div', { class: 'admin-block' }, h('h3', {}, '録音'));
+    if (night.wavFileName) {
+      const replaceArea = h('div', { style: 'display:none' }, uploader(night, true));
+      const replaceBtn = h('button', { class: 'small' }, '差し替える');
+      replaceBtn.addEventListener('click', () => { replaceArea.style.display = ''; replaceBtn.remove(); });
+      audioBox.append(
+        h('p', {}, night.wavFileName + '　',
+          h('a', { class: 'btn small', href: '#/listen/' + id }, '再生画面で見る'), ' ', replaceBtn),
+        replaceArea,
+      );
+    } else {
+      audioBox.append(uploader(night));
+    }
+
+    // 文章
+    const entryBox = h('div', { class: 'admin-block' }, h('h3', {}, `文章（${night.entries.length}件）`));
+    if (!night.entries.length) entryBox.append(h('p', { class: 'dim' }, '文章はありません'));
+    for (const en of night.entries) {
+      const ta = h('textarea', { rows: Math.max(2, en.text.split('\n').length) });
+      ta.value = en.text;
+      const saveBtn = h('button', { class: 'small', disabled: true }, '保存');
+      const note = h('span', { class: 'dim status' }, en.editedAt ? '編集済み' : '');
+      ta.addEventListener('input', () => { saveBtn.disabled = ta.value === en.text || !ta.value.trim(); note.textContent = ta.value === en.text ? '' : '未保存'; });
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        try {
+          const updated = await api('PATCH', `/api/nights/${id}/entries/${en.id}`, { text: ta.value });
+          Object.assign(en, updated);
+          note.textContent = '保存しました';
+        } catch (e) {
+          saveBtn.disabled = false;
+          note.textContent = '保存できませんでした：' + e.message;
+        }
+      });
+      entryBox.append(h('div', { class: 'admin-entry' },
+        h('div', { class: 'num dim' }, fmtTimeSec.format(en.typedAt), h('br'), '（' + fmtDuration(en.typedAt - night.startedAt) + '）'),
+        ta,
+        h('div', { class: 'admin-entry-actions' }, saveBtn, note),
+      ));
+    }
+
+    screen.append(audioBox, entryBox);
+    return null;
+  }
+
+  // ---------- 再生 ----------
+  async function viewPlayer(id) {
+    const night = await api('GET', '/api/nights/' + id);
+    const screen = h('section', { class: 'screen player' });
+    app.append(backButton('#/listen', 'menu', '一覧へ'), screen);
+    const head = h('div', { class: 'head fadeable' }, fmtDate.format(night.startedAt) + '　' + fmtTime.format(night.startedAt));
+
+    if (!night.wavFileName) {
+      screen.style.justifyContent = 'center';
+      screen.append(head, h('p', { class: 'dim', style: 'margin-top:6vh' }, 'この夜の録音はまだありません'));
+      return null;
+    }
+
+    // --- プレイヤー ---
+    let audioSrc = `/api/nights/${id}/audio`;
+    if (LOCAL) {
+      audioSrc = await LOCAL.audioUrl(id);
+      if (!audioSrc) {
+        // 単体HTML版で、録音がこのブラウザに残っていないとき
+        screen.style.justifyContent = 'center';
+        screen.append(head,
+          h('p', { class: 'dim', style: 'margin:6vh 0 3vh' }, `録音（${night.wavFileName}）がこのブラウザに見つかりません。もう一度選んでください。`),
+          uploader(night));
+        return null;
+      }
+    }
+    const audio = h('audio', { preload: 'metadata', src: audioSrc });
+    const stage = h('div', { class: 'stage' });
+    const playBtn = h('button', { class: 'icon-btn play', title: '再生', 'aria-label': '再生' }, icon('play'));
+    const setPlayIcon = (playing) => { playBtn.replaceChildren(icon(playing ? 'stop' : 'play')); playBtn.title = playing ? '停止' : '再生'; playBtn.setAttribute('aria-label', playBtn.title); };
+    const seek = h('input', { type: 'range', min: 0, max: 1000, value: 0, step: 'any', 'aria-label': '再生位置' });
+    const pos = h('span');
+    const times = h('span', { class: 'times' }, pos);
+    const controls = h('div', { class: 'controls fadeable' }, seek, h('div', { class: 'row' }, playBtn, times));
+    screen.append(head, stage, controls, audio);
+
+    // 表示期間：基本は entryDisplayMs。ただし次の文章が出る時点で譲って消え始める
+    const entries = night.entries
+      .map((en) => ({ ...en, offset: en.typedAt - night.startedAt }))
+      .sort((a, b) => a.offset - b.offset);
+    entries.forEach((en, i) => {
+      const next = entries[i + 1];
+      en.until = en.offset + C.entryDisplayMs;
+      if (next && next.offset < en.until) en.until = next.offset;
+    });
+    const shown = new Map(); // id -> { el, timer }
+    let seeking = false;
+
+    function updateEntries(tMs) {
+      for (const en of entries) {
+        const visible = tMs >= en.offset && tMs < en.until;
+        const cur = shown.get(en.id);
+        if (visible && !cur) {
+          const el = h('div', { class: 'entry' }, en.text);
+          // 時刻順に並ぶよう挿入
+          const after = [...shown.values()].find((s) => s.offset > en.offset);
+          stage.insertBefore(el, after ? after.el : null);
+          void el.offsetWidth;
+          el.classList.add('show');
+          shown.set(en.id, { el, offset: en.offset, timer: null });
+        } else if (visible && cur && cur.timer) {
+          clearTimeout(cur.timer); // 消えかけていたら戻す
+          cur.timer = null;
+          cur.el.classList.add('show');
+        } else if (!visible && cur && !cur.timer) {
+          cur.el.classList.remove('show');
+          cur.timer = setTimeout(() => { cur.el.remove(); shown.delete(en.id); }, C.entryFadeMs);
+        }
+      }
+    }
+
+    function updateUi() {
+      const t = audio.currentTime || 0;
+      const d = audio.duration;
+      if (!seeking && Number.isFinite(d) && d > 0) seek.value = (t / d) * 1000;
+      seek.style.setProperty('--p', (seek.value / 10) + '%');
+      pos.textContent = fmtDuration(t * 1000) + ' / ' + (Number.isFinite(d) ? fmtDuration(d * 1000) : '--:--:--');
+      updateEntries(t * 1000);
+    }
+
+    let raf = 0;
+    const loop = () => { updateUi(); raf = requestAnimationFrame(loop); };
+    raf = requestAnimationFrame(loop);
+
+    const toggle = () => { if (audio.paused) audio.play().catch((e) => alert('再生できませんでした：' + e.message)); else audio.pause(); };
+    playBtn.addEventListener('click', toggle);
+    audio.addEventListener('play', () => { setPlayIcon(true); });
+    audio.addEventListener('pause', () => { setPlayIcon(false); });
+    audio.addEventListener('ended', () => { setPlayIcon(false); });
+    audio.addEventListener('error', () => { stage.innerHTML = ''; stage.append(h('p', { class: 'error' }, '録音ファイルを読み込めませんでした')); });
+
+    seek.addEventListener('input', () => {
+      seek.style.setProperty('--p', (seek.value / 10) + '%');
+      seeking = true;
+      const d = audio.duration;
+      if (Number.isFinite(d)) {
+        const t = (seek.value / 1000) * d;
+        pos.textContent = fmtDuration(t * 1000) + ' / ' + fmtDuration(d * 1000);
+      }
+    });
+    seek.addEventListener('change', () => {
+      const d = audio.duration;
+      if (Number.isFinite(d)) audio.currentTime = (seek.value / 1000) * d;
+      seeking = false;
+    });
+
+    // キー操作：スペース＝再生/一時停止、←→＝10秒移動
+    const onKey = (e) => {
+      if (e.target.closest('textarea, input:not([type=range])')) return;
+      if (e.code === 'Space') { e.preventDefault(); toggle(); }
+      else if (e.key === 'ArrowRight') { audio.currentTime = Math.min((audio.duration || 0), audio.currentTime + 10); }
+      else if (e.key === 'ArrowLeft') { audio.currentTime = Math.max(0, audio.currentTime - 10); }
+    };
+    document.addEventListener('keydown', onKey);
+
+    // しばらく操作がないと操作部とカーソルを隠す（再生中のみ）
+    let idleTimer = 0;
+    const wake = () => {
+      screen.classList.remove('idle');
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { if (!audio.paused) screen.classList.add('idle'); }, 4000);
+    };
+    document.addEventListener('mousemove', wake);
+    document.addEventListener('keydown', wake);
+    audio.addEventListener('pause', wake);
+    wake();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(idleTimer);
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousemove', wake);
+      document.removeEventListener('keydown', wake);
+      for (const s of shown.values()) clearTimeout(s.timer);
+    };
+  }
+
+  function uploader(night, replacing = false) {
+    const input = h('input', { type: 'file', accept: '.wav,audio/wav,audio/x-wav', style: 'display:none' });
+    const pick = h('button', {}, 'wavファイルを選ぶ');
+    const msg = h('p', {}, 'この夜の録音（wav）をここにドロップするか、ファイルを選んでください');
+    const progress = h('progress', { max: 100, value: 0, style: 'display:none' });
+    const zone = h('div', { class: 'dropzone' }, msg, pick, input, progress);
+    let busy = false;
+
+    pick.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => { if (input.files[0]) upload(input.files[0]); });
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('over');
+      const f = e.dataTransfer.files[0];
+      if (f) upload(f);
+    });
+
+    function upload(file) {
+      if (busy) return;
+      if (!/\.wav$/i.test(file.name)) { msg.textContent = 'wavファイルを選んでください（' + file.name + '）'; msg.className = 'error'; return; }
+      if (replacing && !confirm(`今の録音（${night.wavFileName}）を ${file.name} に差し替えますか？\n今の録音ファイルは消えます。`)) return;
+      busy = true;
+      pick.disabled = true;
+      msg.className = '';
+      msg.textContent = file.name + ' を取り込んでいます…';
+      progress.style.display = '';
+      if (LOCAL) {
+        LOCAL.importAudio(night.id, file, (p) => { progress.value = p * 100; })
+          .then(() => { busy = false; route(); })
+          .catch((e) => {
+            busy = false;
+            msg.textContent = '取り込めませんでした：' + e.message;
+            msg.className = 'error';
+            pick.disabled = false;
+            progress.style.display = 'none';
+          });
+        return;
+      }
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `/api/nights/${night.id}/audio`);
+      xhr.setRequestHeader('Content-Type', 'audio/wav');
+      xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) progress.value = (e.loaded / e.total) * 100; };
+      xhr.onload = () => {
+        busy = false;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          route(); // 同じ画面を読み直してプレイヤーへ
+        } else {
+          let err = xhr.statusText;
+          try { err = JSON.parse(xhr.responseText).error; } catch {}
+          msg.textContent = '取り込めませんでした：' + err;
+          msg.className = 'error';
+          pick.disabled = false;
+          progress.style.display = 'none';
+        }
+      };
+      xhr.onerror = () => {
+        busy = false;
+        msg.textContent = '取り込めませんでした（通信エラー）';
+        msg.className = 'error';
+        pick.disabled = false;
+        progress.style.display = 'none';
+      };
+      xhr.send(file);
+    }
+    return zone;
+  }
+
+  // スマホ用の入口から開かれたかを確かめてから、最初の画面を出す
+  api('GET', '/api/mode')
+    .then((m) => {
+      MOBILE = !!m.mobile;
+      if (!MOBILE) return route();
+      document.body.classList.add('mobile');
+      if (m.authorized) return route();
+      // 合言葉がない・古い：書く画面は出さない
+      app.append(h('section', { class: 'screen' },
+        h('p', { class: 'dim', style: 'margin-top:30vh;text-align:center;line-height:2.2' },
+          'PCの「スマホで書く」に出ている', h('br'), 'QRコードから開き直してください。')));
+      app.classList.add('visible');
+    })
+    .catch(() => route());
+})();
+
+</script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
